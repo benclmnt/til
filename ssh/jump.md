@@ -1,4 +1,4 @@
-# Passwordless ssh
+# Passwordless ssh (via tunneling / jumps)
 
 We are going to connect from our computer (A) to a remote server (C) via a bridge server (B).
 
