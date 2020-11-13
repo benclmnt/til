@@ -2,14 +2,6 @@
 
 Related repo: [CS2102 Project Repo](https://github.com/benclmnt/CS2102_2021_S1_Team28/blob/master/heroku-deploy.py)
 
-I have the `heroku` remote set to 
-
-```bash
-$ git remotes
-heroku  git@heroku.com:cs2102-petsos.git (fetch)
-heroku  git@heroku.com:cs2102-petsos.git (push)
-```
-
 Based on:
 1. [Heroku-Node-Pg](https://www.taniarascia.com/node-express-postgresql-heroku/)
 2. [Monorepo + Heroku](https://chunkofcode.net/deploying-a-monorepo-with-backend-and-frontend-directory-to-heroku-using-git-subtree/)
@@ -23,7 +15,13 @@ Based on:
 
 ## Solution
 
-My solution can be seen [here](https://github.com/benclmnt/CS2102_2021_S1_Team28/blob/master/heroku-deploy.py).
+My solution can be seen [here](https://github.com/benclmnt/CS2102_2021_S1_Team28/blob/master/heroku-deploy.py). I have the `heroku` remote set to 
+
+```bash
+$ git remotes
+heroku  git@heroku.com:cs2102-petsos.git (fetch)
+heroku  git@heroku.com:cs2102-petsos.git (push)
+```
 
 Summary:
 
