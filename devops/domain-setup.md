@@ -1,6 +1,6 @@
 # Domain setup
 
-Based on [this](https://sneak.berlin/20201029/stop-emailing-like-a-rube/)
+Inspired by [this](https://sneak.berlin/20201029/stop-emailing-like-a-rube/)
 
 ## Domain registration
 
@@ -56,19 +56,19 @@ mail hosting services.
 
 ### Sending email
 
-Follow this hand-holding [guide](https://forwardemail.net/en/faq#how-to-send-mail-as-using-gmail)
+Follow this hand-holding [guide](https://forwardemail.net/en/faq#how-to-send-mail-as-using-gmail) from Forward Email.
 
 Notes:
-    - It is recommended to create a new gmail account with random username as
-      your information will be publicly searchable (if you are on the FREE
-      plan)
-    - When generating gmail's app passwords, fill in a more descriptive text
-      input e.g. "me@mydomain.com - send email as". This will help identify
-      if you need more than one app passwords (in the future). Also, do not
-      ever delete the generated app passwords or your email will fail
-      sending.
-    - If your email does not end with `@gmail.com`, you need to fill in your
-      whole email for the username, instead of just the username portion.
+  - It is recommended to create a new gmail account with random username as
+    your information will be publicly searchable (if you are on the FREE
+    plan)
+  - When generating gmail's app passwords, fill in a more descriptive text
+    input e.g. "me@mydomain.com - send email as". This will help identify
+    if you need more than one app passwords (in the future). Also, do not
+    ever delete the generated app passwords or your email will fail
+    sending.
+  - If your email does not end with `@gmail.com`, you need to fill in your
+    whole email for the username, instead of just the username portion.
 
 
 ## Setting up your custom domain email in Windows 10 Mail App
@@ -81,7 +81,7 @@ Solution: Taken from
 
 1. In the Windows 10 mail app, go to settings menu > "manage accounts" > "add
    account" > "advanced setup" > "Internet email"
-2. Fill out the form, with your alias (`me@mydomain.com`) as the email, and
+2. Fill out the form, with your alias (`me@mydomain.com`) as email, and
    your gmail username as the "User name" Come back to the password later. For
    the incoming and outgoing servers, enter "smtp.gmail.com." Choose IMAP4 for
    the account type. Enter whatever you like for the account name and "Send
