@@ -15,7 +15,13 @@ Based on:
 
 ## Solution
 
-My solution can be seen [here](https://github.com/benclmnt/CS2102_2021_S1_Team28/blob/master/heroku-deploy.py).
+My solution can be seen [here](https://github.com/benclmnt/CS2102_2021_S1_Team28/blob/master/heroku-deploy.py). I have the `heroku` remote set to 
+
+```bash
+$ git remotes
+heroku  git@heroku.com:cs2102-petsos.git (fetch)
+heroku  git@heroku.com:cs2102-petsos.git (push)
+```
 
 Summary:
 
