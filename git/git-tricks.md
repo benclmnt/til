@@ -22,3 +22,13 @@ git reset --hard origin/master
 ## Edit last commit 
 
 `git commit --amend --no-edit`
+
+## Recursively add any java file under project root
+
+`git add :/*.java`
+
+Note: The `:` is a [pathspec](https://git-scm.com/docs/gitglossary#Documentation/gitglossary.txt-aiddefpathspecapathspec). The `/` asks git to start searching from the project root.
+
+## Github ssh keys
+
+Seems like github uses the email from SSH key comment to determine your `user.email` git configuration :confused:
