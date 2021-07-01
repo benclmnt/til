@@ -1,3 +1,9 @@
+---
+title: Sunfire as Git Server
+tags: [git]
+date: 2020-10-02
+draft: false
+---
 # Setting up sunfire as a remote git server
 
 ## Background

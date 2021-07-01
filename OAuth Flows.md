@@ -1,3 +1,9 @@
+---
+Title: OAuth 2.0
+tags: [auth, authz]
+Date: 2021-05-22
+draft: false
+---
 ## OAuth 2.0
 
 Motivation: To authorize one application to access your data, or use features in another application on your behalf, without giving them your password.

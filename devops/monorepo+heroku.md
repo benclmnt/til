@@ -1,3 +1,10 @@
+---
+title: Heroku Monorepo
+tags: [devops]
+date: 2020-11-13
+draft: false
+---
+
 # Deploying monorepo + heroku
 
 Related repo: [CS2102 Project Repo](https://github.com/benclmnt/CS2102_2021_S1_Team28/blob/master/heroku-deploy.py)

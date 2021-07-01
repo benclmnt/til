@@ -1,9 +1,15 @@
+---
+title: Virtualenv
+tags: [python]
+date: 2020-08-18
+draft: false
+---
 # Virtual Env
 
 Using virtualenv is beneficial to keep the main python free from cluttered by
 one-off libraries. Here's how to set up. For *NIX, change `python` to `python3`
 
-```powershell
+```bash
 python --version # check your python version
 python -m pip install --upgrade pip # upgrade python package manager version
 
