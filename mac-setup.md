@@ -1,7 +1,8 @@
 ---
 Title: Mac must-haves
-Date: 8 May 2021
+Date: 2021-05-08
 summary: A list of must-haves when you setup a mac
+showtoc: false
 ---
 
 1. Telegram Desktop

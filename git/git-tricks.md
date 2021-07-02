@@ -2,7 +2,6 @@
 title: Git Tricks
 tags: [git]
 date: 2021-02-03
-draft: false
 ---
 # Git tricks
 

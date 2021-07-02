@@ -1,8 +1,7 @@
 ---
 Title: Passwordless SSH
-Tags: [ssh, devops]
 Date: 2020-08-13
-draft: false
+Tags: [ssh, devops]
 ---
 
 # Passwordless ssh login

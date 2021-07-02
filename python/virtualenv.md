@@ -2,7 +2,6 @@
 title: Virtualenv
 tags: [python]
 date: 2020-08-18
-draft: false
 ---
 # Virtual Env
 

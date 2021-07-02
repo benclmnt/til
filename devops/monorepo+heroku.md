@@ -2,7 +2,6 @@
 title: Heroku Monorepo
 tags: [devops]
 date: 2020-11-13
-draft: false
 ---
 
 # Deploying monorepo + heroku
