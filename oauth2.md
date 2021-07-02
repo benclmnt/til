@@ -1,14 +1,16 @@
 ---
 Title: OAuth 2.0
 tags: [auth, authz]
-Date: 2021-05-22
-draft: false
+Date: 22 May 2021
+summary: OAuth 2.0 is an authorization scheme that is widely used today. In this note, we discussed oauth's common flows, its tradeoffs and when to use each flow.
 ---
-## OAuth 2.0
 
-Motivation: To authorize one application to access your data, or use features in another application on your behalf, without giving them your password.
+### Motivation
 
-Terms:
+To authorize one application to access your data, or use features in another application on your behalf, without giving them your password.
+
+### Terms:
+
 1. **Resource Owner**: You! You are the owner of your identity, your data, and any actions that can be performed with your accounts.
 2. **Client**: The application that wants to access data or perform actions on behalf of the Resource Owner.
 3. **Authorization Server**: The application that knows the Resource Owner, where the Resource Owner already has an account. Can be first party (same as resource server) or third party like FB/Auth0.
