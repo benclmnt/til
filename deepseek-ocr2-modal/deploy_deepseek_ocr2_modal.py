@@ -29,6 +29,10 @@ Usage:
 
   uv run python ocr_client.py doc.pdf
 
+  ``POST /ocr`` and ``POST /ocr_pdf`` return ``application/zip`` (``markdown.md``, ``images/``,
+  ``metadata.json``). Use ``ocr_client.py`` to print markdown and optionally materialize a folder
+  when cropped figures exist.
+
 Environment (Modal function / dashboard):
   HF_MODEL_ID — default `deepseek-ai/DeepSeek-OCR-2`
   GPU_MEMORY_UTILIZATION — default `0.75`
@@ -209,8 +213,11 @@ def serve():
     import fitz
     import numpy as np
 
+    import json
+    import zipfile
+
     from fastapi import FastAPI, HTTPException, Request
-    from fastapi.responses import JSONResponse
+    from fastapi.responses import Response
     from PIL import Image, ImageDraw, ImageFont, ImageOps
     from process.image_process import DeepseekOCR2Processor
     from process.ngram_norepeat import NoRepeatNGramLogitsProcessor
@@ -418,12 +425,44 @@ def serve():
             return default
         return int(str(v))
 
+    def _bundle_zip_bytes(tmp_dir: str, markdown: str, metadata: dict[str, Any]) -> bytes:
+        """Zip layout: ``markdown.md``, ``metadata.json``, optional ``images/*`` and extras under ``tmp_dir``."""
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+            zf.writestr("markdown.md", markdown.encode("utf-8"))
+            zf.writestr(
+                "metadata.json",
+                json.dumps(metadata, ensure_ascii=False, indent=2).encode("utf-8"),
+            )
+            img_dir = os.path.join(tmp_dir, "images")
+            if os.path.isdir(img_dir):
+                for name in sorted(os.listdir(img_dir)):
+                    fp = os.path.join(img_dir, name)
+                    if os.path.isfile(fp):
+                        zf.write(fp, f"images/{name}")
+            for extra in (
+                "result_with_boxes.jpg",
+                "geo.jpg",
+                "result_ori.mmd",
+                "result.mmd",
+            ):
+                fp = os.path.join(tmp_dir, extra)
+                if os.path.isfile(fp):
+                    zf.write(fp, extra)
+            # Per-page geo exports from PDF flow
+            for name in sorted(os.listdir(tmp_dir)):
+                if name.startswith("geo_") and name.endswith(".jpg"):
+                    fp = os.path.join(tmp_dir, name)
+                    if os.path.isfile(fp):
+                        zf.write(fp, name)
+        return buf.getvalue()
+
     @web.get("/health")
     def health() -> dict[str, str]:
         return {"status": "ok"}
 
     @web.post("/ocr")
-    async def ocr_endpoint(request: Request) -> JSONResponse:
+    async def ocr_endpoint(request: Request) -> Response:
         form = await request.form()
         raw = await _form_file_bytes(form, "file")
         if not raw:
@@ -526,18 +565,22 @@ def serve():
 
             result.save(f"{tmp}/result_with_boxes.jpg")
 
-        return JSONResponse(
-            content={
-                "markdown": outputs,
+            meta = {
                 "raw": result_out,
                 "model_path": ds_config.MODEL_PATH,
                 "hf_revision": hf_revision,
                 "hf_code_revision": hf_code_revision,
             }
+            bundle_bytes = _bundle_zip_bytes(tmp, outputs, meta)
+
+        return Response(
+            content=bundle_bytes,
+            media_type="application/zip",
+            headers={"Content-Disposition": 'attachment; filename="ocr-bundle.zip"'},
         )
 
     @web.post("/ocr_pdf")
-    async def ocr_pdf_endpoint(request: Request) -> JSONResponse:
+    async def ocr_pdf_endpoint(request: Request) -> Response:
         form = await request.form()
         raw = await _form_file_bytes(form, "file")
         if not raw:
@@ -690,20 +733,27 @@ def serve():
                     except Exception:
                         pass
 
-        payload: dict[str, Any] = {
-            "markdown": contents,
-            "markdown_det": contents_det,
-            "page_count": len(images),
-            "skip_repeat": bool(ds_config.SKIP_REPEAT),
-            "pages_missing_eos": pages_missing_eos,
-            "pages_skipped": pages_skipped,
-            "model_path": ds_config.MODEL_PATH,
-            "hf_revision": hf_revision,
-            "hf_code_revision": hf_code_revision,
-        }
-        if include_raw_pages:
-            payload["raw_pages"] = raw_pages
-        return JSONResponse(content=payload)
+            payload: dict[str, Any] = {
+                "markdown": contents,
+                "markdown_det": contents_det,
+                "page_count": len(images),
+                "skip_repeat": bool(ds_config.SKIP_REPEAT),
+                "pages_missing_eos": pages_missing_eos,
+                "pages_skipped": pages_skipped,
+                "model_path": ds_config.MODEL_PATH,
+                "hf_revision": hf_revision,
+                "hf_code_revision": hf_code_revision,
+            }
+            if include_raw_pages:
+                payload["raw_pages"] = raw_pages
+            meta = {k: v for k, v in payload.items() if k != "markdown"}
+            bundle_bytes = _bundle_zip_bytes(tmp, contents, meta)
+
+        return Response(
+            content=bundle_bytes,
+            media_type="application/zip",
+            headers={"Content-Disposition": 'attachment; filename="ocr-pdf-bundle.zip"'},
+        )
 
     return web
 

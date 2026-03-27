@@ -33,10 +33,12 @@ DEEPSEEK_OCR_API_URL='https://…--deepseek-ocr2-vllm-serve.modal.run' \
   uv run python ocr_client.py document.pdf
 ```
 
-Optional: `--dpi` (PDF), `--raw-pages`, `--prompt`, `--json`.
+Optional: `--dpi` (PDF), `--raw-pages`, `--prompt`, `--json`, `--output-dir`.
 
-`/ocr_pdf` responses include `skip_repeat`, `pages_missing_eos`, and `pages_skipped` so you can
-quickly see whether missing EOS markers or repeat-guard logic affected extraction.
+Responses are a **ZIP** (`markdown.md`, `metadata.json`, optional `images/`). The example client
+prints markdown to stdout and, when cropped figures exist, extracts the bundle next to the input
+(`<stem>.ocr` by default). Use `--json` to print `metadata.json` instead (PDF fields such as
+`skip_repeat`, `pages_missing_eos`, and `pages_skipped` live there).
 
 ## Hugging Face pinning (optional)
 
