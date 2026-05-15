@@ -12,6 +12,7 @@ import os
 import re
 import shutil
 import sys
+from datetime import datetime
 from pathlib import Path
 
 from spotify_downloader import SpotifyDownloader
@@ -313,7 +314,7 @@ def download_audio(
     raise SystemExit(f"Downloaded audio not found at {target_path}*")
 
 
-def sanitize_filename(text: str, max_len: int = 100) -> str:
+def sanitize_filename(text: str, max_len: int = 40) -> str:
     """Create a safe filename from arbitrary text."""
     text = re.sub(r"[^\w\s-]", "", text).strip().replace(" ", "_")
     return text[:max_len] if text else "transcript"
@@ -338,9 +339,9 @@ def main() -> None:
     )
     parser.add_argument(
         "--out-dir",
-        default=".",
+        default="output",
         type=Path,
-        help="Directory to write the transcript (default: current folder)",
+        help="Directory to write the transcript (default: ./output/)",
     )
     parser.add_argument(
         "--json",
@@ -506,13 +507,14 @@ def main() -> None:
 
         first_line = transcript.strip().splitlines()[0] if transcript.strip() else ""
         base_name = sanitize_filename(first_line) if first_line else "transcript"
-        txt_path = out_dir / f"{base_name}.txt"
-        json_path = out_dir / f"{base_name}.json"
+        ts = datetime.now().strftime("%Y%m%d_%H%M")
+        txt_path = out_dir / f"{ts}_{base_name}.txt"
+        json_path = out_dir / f"{ts}_{base_name}.json"
 
         counter = 1
         while txt_path.exists():
-            txt_path = out_dir / f"{base_name}_{counter}.txt"
-            json_path = out_dir / f"{base_name}_{counter}.json"
+            txt_path = out_dir / f"{ts}_{base_name}_{counter}.txt"
+            json_path = out_dir / f"{ts}_{base_name}_{counter}.json"
             counter += 1
 
         if used_youtube_subtitles:
