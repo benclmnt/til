@@ -112,22 +112,34 @@ def download_youtube_subtitles(url: str, target_path: Path) -> Path | None:
     return candidates[0] if candidates else None
 
 
-def parse_vtt_to_text(vtt_path: Path, start_time: float = 0.0, duration: float | None = None) -> str:
-    """Convert a WebVTT file to plain text, optionally clipping by time."""
+def parse_vtt_to_cues(
+    vtt_path: Path, start_time: float = 0.0, duration: float | None = None
+):
+    """Yield (start_seconds, end_seconds, text) for each cue in a WebVTT file."""
     end_time = None if duration is None else start_time + duration
-    lines: list[str] = []
     in_cue = False
+    cue_start = 0.0
+    cue_end = 0.0
+    cue_lines: list[str] = []
 
     for raw_line in vtt_path.read_text(encoding="utf-8").splitlines():
         line = raw_line.strip()
         if not line or line.upper() == "WEBVTT" or line.startswith("NOTE"):
+            if in_cue and cue_lines:
+                yield (cue_start, cue_end, " ".join(cue_lines))
             in_cue = False
+            cue_lines = []
             continue
         # Cue timing line: 00:00:01.000 --> 00:00:05.000
         if " --> " in line:
+            if in_cue and cue_lines:
+                yield (cue_start, cue_end, " ".join(cue_lines))
             in_cue = True
-            cue_start_str, _ = line.split(" --> ", 1)
+            cue_lines = []
+            cue_start_str, cue_end_str = line.split(" --> ", 1)
             cue_start = _vtt_timestamp_to_seconds(cue_start_str.strip())
+            # Handle optional positioning after the end timestamp
+            cue_end = _vtt_timestamp_to_seconds(cue_end_str.strip().split()[0])
             if end_time is not None and cue_start >= end_time:
                 # Past the clip end; we can stop (VTT cues are ordered)
                 break
@@ -138,9 +150,15 @@ def parse_vtt_to_text(vtt_path: Path, start_time: float = 0.0, duration: float |
             # Remove inline VTT tags like <c>, <b>, etc.
             text = re.sub(r"<[^>]+>", "", line)
             if text:
-                lines.append(text)
+                cue_lines.append(text)
 
-    return " ".join(lines)
+    if in_cue and cue_lines:
+        yield (cue_start, cue_end, " ".join(cue_lines))
+
+
+def parse_vtt_to_text(vtt_path: Path, start_time: float = 0.0, duration: float | None = None) -> str:
+    """Convert a WebVTT file to plain text, optionally clipping by time."""
+    return " ".join(text for _s, _e, text in parse_vtt_to_cues(vtt_path, start_time, duration))
 
 
 def _vtt_timestamp_to_seconds(ts: str) -> float:
@@ -456,7 +474,14 @@ def main() -> None:
             json_path = out_dir / f"{base_name}_{counter}.json"
             counter += 1
 
-        if args.diarize and not used_youtube_subtitles:
+        if used_youtube_subtitles:
+            lines: list[str] = []
+            for start, end, text in parse_vtt_to_cues(
+                subtitle_path, start_time=args.start, duration=args.duration
+            ):
+                lines.append(f"[{start:8.2f} - {end:8.2f}] {text}")
+            txt_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        elif args.diarize:
             lines: list[str] = []
             for u in utterances:
                 speaker = u.get("speaker") or "UNKNOWN"
