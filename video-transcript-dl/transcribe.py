@@ -14,10 +14,12 @@ import shutil
 import sys
 from pathlib import Path
 
+from spotify_downloader import SpotifyDownloader
 from yt_dlp import YoutubeDL
 
 _DIARIZATION_BACKENDS = ("clustering", "sortformer")
 _SORTFORMER_MAX_AUDIO_SECONDS = 120.0
+_DOWNLOAD_CACHE_VERSION = "2"
 
 # Allow importing from sibling parakeet-modal folder
 _PARAKEET_DIR = Path(__file__).resolve().parent.parent / "parakeet-modal"
@@ -58,6 +60,24 @@ def _url_hash(url: str) -> str:
 
 def _is_youtube(url: str) -> bool:
     return bool(re.search(r"(youtube\.com|youtu\.be)", url, re.IGNORECASE))
+
+
+def download_spotify_episode_audio(
+    url: str,
+    target_path: Path,
+    *,
+    start_time: float = 0.0,
+    duration: float | None = None,
+) -> Path:
+    try:
+        return SpotifyDownloader().download_episode_audio(
+            url,
+            target_path,
+            start_time=start_time,
+            duration=duration,
+        )
+    except RuntimeError as exc:
+        raise SystemExit(str(exc)) from exc
 
 
 def download_youtube_subtitles(url: str, target_path: Path) -> Path | None:
@@ -181,7 +201,15 @@ def download_audio(
     start_time: float = 0.0,
     duration: float | None = None,
 ) -> Path:
-    """Download video audio to target_path using yt-dlp. Returns the final audio file path."""
+    """Download media audio to target_path and return the final audio file path."""
+    if SpotifyDownloader.can_handle_url(url):
+        return download_spotify_episode_audio(
+            url,
+            target_path,
+            start_time=start_time,
+            duration=duration,
+        )
+
     ydl_opts = {
         "format": "bestaudio/best",
         "outtmpl": str(target_path.with_suffix("")),
@@ -243,7 +271,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         description="Transcribe a video via YouTube subtitles when available, otherwise fall back to Parakeet STT."
     )
-    parser.add_argument("url", help="Video URL (YouTube, Twitter/X, etc. — any site yt-dlp supports)")
+    parser.add_argument("url", help="Media URL (YouTube, Twitter/X, Spotify podcast episode, etc. — any site yt-dlp supports)")
     parser.add_argument(
         "--parakeet-url",
         default=os.environ.get("PARAKEET_API_URL"),
@@ -328,7 +356,7 @@ def main() -> None:
 
     # Deterministic temp paths in out_dir so we can resume after failures
     range_key = clip_label(args.start, args.duration)
-    cache_key = _url_hash(f'{args.url}|{range_key}')
+    cache_key = _url_hash(f'{_DOWNLOAD_CACHE_VERSION}|{args.url}|{range_key}')
     audio_path = out_dir / f".stt_{cache_key}.m4a"
     subtitle_stub = out_dir / f".stt_{cache_key}.vtt"
     subtitle_path: Path | None = None
