@@ -161,6 +161,47 @@ def parse_vtt_to_text(vtt_path: Path, start_time: float = 0.0, duration: float |
     return " ".join(text for _s, _e, text in parse_vtt_to_cues(vtt_path, start_time, duration))
 
 
+def _find_word_overlap(a: str, b: str, min_words: int = 2) -> int:
+    """Return number of words at the end of *a* that match the start of *b*."""
+    a_words = a.split()
+    b_words = b.split()
+    max_n = min(len(a_words), len(b_words))
+    for n in range(max_n, min_words - 1, -1):
+        if a_words[-n:] == b_words[:n]:
+            return n
+    return 0
+
+
+def clean_vtt_cues(
+    vtt_path: Path,
+    start_time: float = 0.0,
+    duration: float | None = None,
+    min_cue_duration: float = 0.5,
+):
+    """Parse a YouTube VTT, filter out display-refresh overlay cues, and
+    deduplicate the overlapping text between consecutive long cues.
+
+    Yields ``(start, end, text)`` tuples suitable for ``[   X.XX -   Y.YY] text``
+    formatting — no more repeated half-sentences.
+    """
+    raw = list(parse_vtt_to_cues(vtt_path, start_time, duration))
+
+    # Step 1 — discard the very short display-refresh cues (< 0.5 s)
+    long = [(s, e, t) for s, e, t in raw if (e - s) >= min_cue_duration]
+    if not long:
+        return
+
+    # Step 2 — strip overlapping lead-in text from each cue after the first
+    for i in range(1, len(long)):
+        prev_text = long[i - 1][2]
+        n = _find_word_overlap(prev_text, long[i][2], min_words=2)
+        if n > 0:
+            trimmed = " ".join(long[i][2].split()[n:])
+            long[i] = (long[i][0], long[i][1], trimmed)
+
+    yield from long
+
+
 def _vtt_timestamp_to_seconds(ts: str) -> float:
     """Parse VTT timestamp (HH:MM:SS.mmm or MM:SS.mmm) into seconds."""
     parts = ts.replace(",", ".").split(":")
@@ -476,7 +517,7 @@ def main() -> None:
 
         if used_youtube_subtitles:
             lines: list[str] = []
-            for start, end, text in parse_vtt_to_cues(
+            for start, end, text in clean_vtt_cues(
                 subtitle_path, start_time=args.start, duration=args.duration
             ):
                 lines.append(f"[{start:8.2f} - {end:8.2f}] {text}")
