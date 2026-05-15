@@ -272,6 +272,11 @@ def main() -> None:
         help="Enable multi-speaker diarization",
     )
     parser.add_argument(
+        "--single-speaker",
+        action="store_true",
+        help="For YouTube URLs, use yt-dlp subtitles instead of audio transcription/diarization",
+    )
+    parser.add_argument(
         "--diarization-backend",
         choices=_DIARIZATION_BACKENDS,
         default=None,
@@ -294,6 +299,9 @@ def main() -> None:
         parser.error("--start must be >= 0")
     if args.duration is not None and args.duration <= 0:
         parser.error("--duration must be > 0")
+
+    is_youtube = _is_youtube(args.url)
+
     if (
         args.diarize
         and args.diarization_backend == "sortformer"
@@ -304,11 +312,15 @@ def main() -> None:
             f"--diarization-backend sortformer is limited to {_SORTFORMER_MAX_AUDIO_SECONDS:.0f}s clips; "
             "use clustering for longer audio"
         )
+    if args.single_speaker and not is_youtube:
+        parser.error("--single-speaker is only supported for YouTube URLs")
+    if args.single_speaker and not args.diarize:
+        parser.error("--single-speaker cannot be combined with --no-diarize")
 
     check_environment(
         args.parakeet_url,
-        require_parakeet=not _is_youtube(args.url),
-        require_ffmpeg=not _is_youtube(args.url),
+        require_parakeet=not (is_youtube and args.single_speaker),
+        require_ffmpeg=not (is_youtube and args.single_speaker),
     )
 
     out_dir = args.out_dir.expanduser().resolve()
@@ -327,7 +339,7 @@ def main() -> None:
     success = False
 
     try:
-        if _is_youtube(args.url):
+        if is_youtube and args.single_speaker:
             print("[1/3] Trying YouTube subtitles via yt-dlp ...", file=sys.stderr)
             subtitle_path = download_youtube_subtitles(args.url, subtitle_stub)
             if subtitle_path is not None:
@@ -345,23 +357,11 @@ def main() -> None:
                             "subtitle_file": str(subtitle_path),
                         },
                     }
-                    if args.diarize:
-                        print(
-                            "[2/3] Using YouTube subtitles; skipping Parakeet diarization.",
-                            file=sys.stderr,
-                        )
-                    else:
-                        print("[2/3] Using YouTube subtitles.", file=sys.stderr)
+                    print("[2/3] Using YouTube subtitles.", file=sys.stderr)
                 else:
-                    print(
-                        "[1/3] Downloaded YouTube subtitles, but transcript was empty; falling back to audio transcription.",
-                        file=sys.stderr,
-                    )
+                    raise RuntimeError("Downloaded YouTube subtitles, but transcript was empty")
             else:
-                print(
-                    "[1/3] No YouTube English subtitles found; falling back to audio transcription.",
-                    file=sys.stderr,
-                )
+                raise RuntimeError("No YouTube English subtitles found")
 
         if not used_youtube_subtitles:
             check_environment(args.parakeet_url)
