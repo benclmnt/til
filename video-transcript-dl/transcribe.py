@@ -25,16 +25,21 @@ sys.path.insert(0, str(_PARAKEET_DIR))
 from transcribe_client import transcribe as parakeet_transcribe
 
 
-def check_environment(api_url: str | None) -> None:
+def check_environment(
+    api_url: str | None,
+    *,
+    require_parakeet: bool = True,
+    require_ffmpeg: bool = True,
+) -> None:
     """Fail fast if required tooling or config is missing."""
     errors: list[str] = []
 
-    if not api_url:
+    if require_parakeet and not api_url:
         errors.append(
             "Missing Parakeet API URL. Set --parakeet-url or the PARAKEET_API_URL environment variable."
         )
 
-    if shutil.which("ffmpeg") is None:
+    if require_ffmpeg and shutil.which("ffmpeg") is None:
         errors.append(
             "ffmpeg not found in PATH. It's required to extract audio from videos.\n"
             "Install it with:  brew install ffmpeg   (macOS)\n"
@@ -49,6 +54,86 @@ def check_environment(api_url: str | None) -> None:
 
 def _url_hash(url: str) -> str:
     return hashlib.sha256(url.encode()).hexdigest()[:16]
+
+
+def _is_youtube(url: str) -> bool:
+    return bool(re.search(r"(youtube\.com|youtu\.be)", url, re.IGNORECASE))
+
+
+def download_youtube_subtitles(url: str, target_path: Path) -> Path | None:
+    """Try to download English VTT subtitles from YouTube. Returns the .vtt path or None."""
+    ydl_opts = {
+        "skip_download": True,
+        "writesubtitles": True,
+        "writeautomaticsub": True,
+        "subtitleslangs": ["en.*"],
+        "subtitlesformat": "vtt",
+        "outtmpl": str(target_path.with_suffix("")),
+        "quiet": True,
+        "no_warnings": True,
+    }
+
+    with YoutubeDL(ydl_opts) as ydl:
+        try:
+            info = ydl.extract_info(url, download=True)
+        except Exception:
+            return None
+
+    if not info:
+        return None
+
+    # yt-dlp writes subs next to the output template; find the VTT that was just written
+    base = target_path.with_suffix("")
+    candidates = sorted(
+        base.parent.glob(f"{base.name}*.vtt"),
+        key=lambda p: p.stat().st_mtime,
+        reverse=True,
+    )
+    return candidates[0] if candidates else None
+
+
+def parse_vtt_to_text(vtt_path: Path, start_time: float = 0.0, duration: float | None = None) -> str:
+    """Convert a WebVTT file to plain text, optionally clipping by time."""
+    end_time = None if duration is None else start_time + duration
+    lines: list[str] = []
+    in_cue = False
+
+    for raw_line in vtt_path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.upper() == "WEBVTT" or line.startswith("NOTE"):
+            in_cue = False
+            continue
+        # Cue timing line: 00:00:01.000 --> 00:00:05.000
+        if " --> " in line:
+            in_cue = True
+            cue_start_str, _ = line.split(" --> ", 1)
+            cue_start = _vtt_timestamp_to_seconds(cue_start_str.strip())
+            if end_time is not None and cue_start >= end_time:
+                # Past the clip end; we can stop (VTT cues are ordered)
+                break
+            if start_time > 0 and cue_start < start_time:
+                in_cue = False  # skip this cue's text lines
+            continue
+        if in_cue:
+            # Remove inline VTT tags like <c>, <b>, etc.
+            text = re.sub(r"<[^>]+>", "", line)
+            if text:
+                lines.append(text)
+
+    return " ".join(lines)
+
+
+def _vtt_timestamp_to_seconds(ts: str) -> float:
+    """Parse VTT timestamp (HH:MM:SS.mmm or MM:SS.mmm) into seconds."""
+    parts = ts.replace(",", ".").split(":")
+    if len(parts) == 3:
+        h, m, s = parts
+        return int(h) * 3600 + int(m) * 60 + float(s)
+    elif len(parts) == 2:
+        m, s = parts
+        return int(m) * 60 + float(s)
+    else:
+        return float(parts[0])
 
 
 def parse_time_value(value: str) -> float:
@@ -156,13 +241,13 @@ def summarize_diarization(result: dict) -> tuple[int, int, int]:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Download a video's audio track and transcribe it with Parakeet STT."
+        description="Transcribe a video via YouTube subtitles when available, otherwise fall back to Parakeet STT."
     )
     parser.add_argument("url", help="Video URL (YouTube, Twitter/X, etc. — any site yt-dlp supports)")
     parser.add_argument(
         "--parakeet-url",
         default=os.environ.get("PARAKEET_API_URL"),
-        help="Parakeet API base URL (or set PARAKEET_API_URL env var)",
+        help="Parakeet API base URL for non-YouTube or subtitle-fallback transcription (or set PARAKEET_API_URL env var)",
     )
     parser.add_argument(
         "--out-dir",
@@ -178,7 +263,7 @@ def main() -> None:
     parser.add_argument(
         "--keep-media",
         action="store_true",
-        help="Keep the downloaded media file instead of cleaning it up",
+        help="Keep downloaded audio/subtitle cache files instead of cleaning them up",
     )
     parser.add_argument(
         "--diarize",
@@ -220,82 +305,130 @@ def main() -> None:
             "use clustering for longer audio"
         )
 
-    check_environment(args.parakeet_url)
+    check_environment(
+        args.parakeet_url,
+        require_parakeet=not _is_youtube(args.url),
+        require_ffmpeg=not _is_youtube(args.url),
+    )
 
     out_dir = args.out_dir.expanduser().resolve()
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    # Deterministic temp audio path in out_dir so we can resume after failures
+    # Deterministic temp paths in out_dir so we can resume after failures
     range_key = clip_label(args.start, args.duration)
-    audio_path = out_dir / f".stt_{_url_hash(f'{args.url}|{range_key}')}.m4a"
+    cache_key = _url_hash(f'{args.url}|{range_key}')
+    audio_path = out_dir / f".stt_{cache_key}.m4a"
+    subtitle_stub = out_dir / f".stt_{cache_key}.vtt"
+    subtitle_path: Path | None = None
+    used_youtube_subtitles = False
+    transcript = ""
+    utterances: list[dict] = []
+    result: dict = {}
     success = False
 
     try:
-        if audio_path.exists():
-            print(f"[1/3] Using cached audio: {audio_path}", file=sys.stderr)
-        else:
-            clip_desc = (
-                f" (start={args.start:g}s, duration={args.duration:g}s)"
-                if args.duration is not None
-                else (f" (start={args.start:g}s)" if args.start > 0 else "")
-            )
-            print(
-                f"[1/3] Downloading audio from {args.url}{clip_desc} ...",
-                file=sys.stderr,
-            )
-            audio_path = download_audio(
-                args.url,
-                audio_path,
-                start_time=args.start,
-                duration=args.duration,
-            )
-            print(f"      Saved to {audio_path}", file=sys.stderr)
-
-        print("[2/3] Transcribing with Parakeet ...", file=sys.stderr)
-        result = parakeet_transcribe(
-            audio_path,
-            args.parakeet_url,
-            diarize=args.diarize,
-            diarization_backend=args.diarization_backend,
-        )
-
-        transcript = result.get("transcript", "")
-        utterances = result.get("utterances", [])
-
-        if args.diarize:
-            speaker_count, utterance_count, segment_count = summarize_diarization(result)
-            backend = (result.get("metadata") or {}).get("diarization_backend")
-            if backend:
-                print(f"      Diarization backend: {backend}", file=sys.stderr)
-            print(
-                "      Diarization result: "
-                f"speakers={speaker_count}, utterances={utterance_count}, speaker_segments={segment_count}",
-                file=sys.stderr,
-            )
-            if not utterances:
-                metadata = result.get("metadata") or {}
-                raise RuntimeError(
-                    "Diarization was requested, but the API returned no utterances. "
-                    f"speakers={speaker_count}, speaker_segments={segment_count}, "
-                    f"metadata={json.dumps(metadata, ensure_ascii=False)}"
+        if _is_youtube(args.url):
+            print("[1/3] Trying YouTube subtitles via yt-dlp ...", file=sys.stderr)
+            subtitle_path = download_youtube_subtitles(args.url, subtitle_stub)
+            if subtitle_path is not None:
+                transcript = parse_vtt_to_text(
+                    subtitle_path,
+                    start_time=args.start,
+                    duration=args.duration,
+                ).strip()
+                if transcript:
+                    used_youtube_subtitles = True
+                    result = {
+                        "transcript": transcript,
+                        "metadata": {
+                            "source": "youtube_subtitles",
+                            "subtitle_file": str(subtitle_path),
+                        },
+                    }
+                    if args.diarize:
+                        print(
+                            "[2/3] Using YouTube subtitles; skipping Parakeet diarization.",
+                            file=sys.stderr,
+                        )
+                    else:
+                        print("[2/3] Using YouTube subtitles.", file=sys.stderr)
+                else:
+                    print(
+                        "[1/3] Downloaded YouTube subtitles, but transcript was empty; falling back to audio transcription.",
+                        file=sys.stderr,
+                    )
+            else:
+                print(
+                    "[1/3] No YouTube English subtitles found; falling back to audio transcription.",
+                    file=sys.stderr,
                 )
+
+        if not used_youtube_subtitles:
+            check_environment(args.parakeet_url)
+
+            if audio_path.exists():
+                print(f"[1/3] Using cached audio: {audio_path}", file=sys.stderr)
+            else:
+                clip_desc = (
+                    f" (start={args.start:g}s, duration={args.duration:g}s)"
+                    if args.duration is not None
+                    else (f" (start={args.start:g}s)" if args.start > 0 else "")
+                )
+                print(
+                    f"[1/3] Downloading audio from {args.url}{clip_desc} ...",
+                    file=sys.stderr,
+                )
+                audio_path = download_audio(
+                    args.url,
+                    audio_path,
+                    start_time=args.start,
+                    duration=args.duration,
+                )
+                print(f"      Saved to {audio_path}", file=sys.stderr)
+
+            print("[2/3] Transcribing with Parakeet ...", file=sys.stderr)
+            result = parakeet_transcribe(
+                audio_path,
+                args.parakeet_url,
+                diarize=args.diarize,
+                diarization_backend=args.diarization_backend,
+            )
+
+            transcript = result.get("transcript", "")
+            utterances = result.get("utterances", [])
+
+            if args.diarize:
+                speaker_count, utterance_count, segment_count = summarize_diarization(result)
+                backend = (result.get("metadata") or {}).get("diarization_backend")
+                if backend:
+                    print(f"      Diarization backend: {backend}", file=sys.stderr)
+                print(
+                    "      Diarization result: "
+                    f"speakers={speaker_count}, utterances={utterance_count}, speaker_segments={segment_count}",
+                    file=sys.stderr,
+                )
+                if not utterances:
+                    metadata = result.get("metadata") or {}
+                    raise RuntimeError(
+                        "Diarization was requested, but the API returned no utterances. "
+                        f"speakers={speaker_count}, speaker_segments={segment_count}, "
+                        f"metadata={json.dumps(metadata, ensure_ascii=False)}"
+                    )
 
         print("[3/3] Writing transcript ...", file=sys.stderr)
 
-        # Derive filename from first line of transcript or fallback
         first_line = transcript.strip().splitlines()[0] if transcript.strip() else ""
         base_name = sanitize_filename(first_line) if first_line else "transcript"
         txt_path = out_dir / f"{base_name}.txt"
         json_path = out_dir / f"{base_name}.json"
 
-        # Avoid overwriting existing files
         counter = 1
         while txt_path.exists():
             txt_path = out_dir / f"{base_name}_{counter}.txt"
             json_path = out_dir / f"{base_name}_{counter}.json"
             counter += 1
 
-        if args.diarize:
+        if args.diarize and not used_youtube_subtitles:
             lines: list[str] = []
             for u in utterances:
                 speaker = u.get("speaker") or "UNKNOWN"
@@ -305,7 +438,7 @@ def main() -> None:
                 lines.append(f"[{start:8.2f} - {end:8.2f}] {speaker}: {text}")
             txt_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
         else:
-            txt_path.write_text(transcript, encoding="utf-8")
+            txt_path.write_text(transcript + ("\n" if transcript and not transcript.endswith("\n") else ""), encoding="utf-8")
 
         print(f"      Transcript: {txt_path}", file=sys.stderr)
 
@@ -315,14 +448,16 @@ def main() -> None:
             )
             print(f"      JSON:       {json_path}", file=sys.stderr)
 
-        # Print transcript / diarization to stdout as well
         print(txt_path.read_text(encoding="utf-8"), end="")
         success = True
 
     finally:
         if success and not args.keep_media and audio_path.exists():
             audio_path.unlink()
-            print(f"      Cleaned up cached audio", file=sys.stderr)
+            print("      Cleaned up cached audio", file=sys.stderr)
+        if success and not args.keep_media and subtitle_path is not None and subtitle_path.exists():
+            subtitle_path.unlink()
+            print("      Cleaned up cached subtitles", file=sys.stderr)
 
 
 if __name__ == "__main__":
