@@ -1,0 +1,16 @@
+{
+  "name": "atlasobscura",
+  "module": "index.ts",
+  "devDependencies": {
+    "@types/bun": "latest",
+    "@types/ws": "^8.18.1"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  },
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "ws": "^8.20.0"
+  }
+}
